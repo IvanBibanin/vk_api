@@ -1,3 +1,5 @@
+import sqlalchemy
+
 class to_postgresql():
     def __init__(self, port=None, host=None, user=None, password=None, database=None, schema=None):
         self.schema=schema
