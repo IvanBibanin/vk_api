@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name="ivan-vk-api",
-    version="0.1.0",
+    version="0.1.1",
     description="Helpers for VK Ads API data loading and PostgreSQL export.",
     py_modules=[
         "vk_api",
