@@ -1,111 +1,43 @@
-import pandas as pd
-import sqlalchemy
+class to_postgresql():
+    def __init__(self, port=None, host=None, user=None, password=None, database=None, schema=None):
+        self.schema=schema
+        self.engine = sqlalchemy.create_engine(f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}",
+                pool_pre_ping=True,pool_recycle=1800,connect_args={"connect_timeout": 30},
+                executemany_mode="values_plus_batch",executemany_batch_page_size=500)
 
+    def create_table(self, table_name=None, data=None):
+        column_name = ', '.join(f'"{d}" DATE' if d == 'date' or d == 'Дата' else f'"{d}" TEXT' for d in data.columns.tolist())
 
-class ToPostgreSQL:
-    def __init__(
-        self,
-        port=None,
-        host=None,
-        user=None,
-        password=None,
-        database=None,
-        schema=None,
-        connect_timeout=30,
-        pool_recycle=1800,
-        batch_page_size=500,
-    ):
-        self.schema = schema
-        self.batch_page_size = batch_page_size
+        with self.engine.begin() as connection:
+            connection.execute(
+                sqlalchemy.text(f'CREATE SCHEMA IF NOT EXISTS {self.schema}')
+            )
+            connection.execute(
+                sqlalchemy.text(
+                    f'CREATE TABLE IF NOT EXISTS {self.schema}."{table_name}" ({column_name})'
+                )
+            )
 
-        db_url = sqlalchemy.engine.URL.create(
-            'postgresql+psycopg2',
-            username=user,
-            password=password,
-            host=host,
-            port=port,
-            database=database,
-        )
-        self.engine = sqlalchemy.create_engine(
-            db_url,
-            pool_pre_ping=True,
-            pool_recycle=pool_recycle,
-            connect_args={'connect_timeout': connect_timeout},
-            executemany_mode='values_plus_batch',
-            executemany_batch_page_size=batch_page_size,
-        )
-
-    @staticmethod
-    def _quote_identifier(identifier):
-        if not isinstance(identifier, str) or not identifier.strip():
-            raise ValueError('SQL identifier cannot be empty')
-        return '"' + identifier.replace('"', '""') + '"'
-
-    def _qualified_table(self, table_name):
-        return f'{self._quote_identifier(self.schema)}.{self._quote_identifier(table_name)}'
-
-    @staticmethod
-    def _validate_data(data):
-        if data is None or not isinstance(data, pd.DataFrame):
-            raise ValueError('data must be a pandas DataFrame')
-        if data.empty:
-            raise ValueError('data must not be empty')
-        if 'date' not in data.columns:
-            raise ValueError('data must contain a date column')
-
-    @staticmethod
-    def _normalize_data(data):
-        normalized = data.copy()
-        normalized['date'] = pd.to_datetime(normalized['date']).dt.date
-        normalized = normalized.where(pd.notna(normalized), None)
-        return normalized
-
-    @staticmethod
-    def _column_type(column_name):
-        return 'DATE' if column_name == 'date' else 'TEXT'
-    
-    def sql_query(self,query=None):
+    def sql_query(self, query=None):
         with self.engine.begin() as connection:
             connection.execute(sqlalchemy.text(query))
 
-    def create_table(self, table_name=None, data=None):
-        self._validate_data(data)
-        columns_sql = ', '.join(
-            f'{self._quote_identifier(column)} {self._column_type(column)}'
-            for column in data.columns.tolist()
-        )
-        table_sql = self._qualified_table(table_name)
-
-        with self.engine.begin() as connection:
-            connection.execute(
-                sqlalchemy.text(f'CREATE SCHEMA IF NOT EXISTS {self._quote_identifier(self.schema)}')
-            )
-            connection.execute(
-                sqlalchemy.text(f'CREATE TABLE IF NOT EXISTS {table_sql} ({columns_sql})')
-            )
-
-        print(f'Таблица {self.schema}.{table_name} готова')
-        return True
-
     def insert_into_table(self, table_name=None, data=None):
-        self._validate_data(data)
-        data = self._normalize_data(data)
+        data = data.copy()
+        data = data.where(pd.notna(data), None)
         columns = data.columns.tolist()
-        columns_sql = ', '.join(self._quote_identifier(column) for column in columns)
-        placeholders_sql = ', '.join(f':p{i}' for i in range(len(columns)))
-        table_sql = self._qualified_table(table_name)
-        
-        rows = [
-            {f'p{i}': row.get(column) for i, column in enumerate(columns)}
-            for row in data.to_dict(orient='records')
-        ]
+        placeholders = [f"column_{index}" for index in range(len(columns))]
+        columns_sql = ", ".join(f'"{c}"' for c in columns)
+        placeholders_sql = ", ".join(f":{c}" for c in placeholders)
 
         insert_sql = sqlalchemy.text(
-            f'INSERT INTO {table_sql} ({columns_sql}) VALUES ({placeholders_sql})'
+            f'INSERT INTO {self.schema}."{table_name}" ({columns_sql}) VALUES ({placeholders_sql})'
         )
+
+        rows = [
+            {placeholder: row[column] for placeholder, column in zip(placeholders, columns)}
+            for row in data.to_dict(orient="records")
+        ]
 
         with self.engine.begin() as connection:
             connection.execute(insert_sql, rows)
-
-        print(f'Записано строк: {len(rows)} в {self.schema}.{table_name}')
-        return True
