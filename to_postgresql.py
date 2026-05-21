@@ -63,6 +63,10 @@ class ToPostgreSQL:
     @staticmethod
     def _column_type(column_name):
         return 'DATE' if column_name == 'date' else 'TEXT'
+    
+    def sql_query(self,query=None):
+        with self.engine.begin() as connection:
+            connection.execute(sqlalchemy.text(query))
 
     def create_table(self, table_name=None, data=None):
         self._validate_data(data)
@@ -86,28 +90,21 @@ class ToPostgreSQL:
     def insert_into_table(self, table_name=None, data=None):
         self._validate_data(data)
         data = self._normalize_data(data)
-
-        min_date = data['date'].min()
-        max_date = data['date'].max()
         columns = data.columns.tolist()
         columns_sql = ', '.join(self._quote_identifier(column) for column in columns)
         placeholders_sql = ', '.join(f':p{i}' for i in range(len(columns)))
         table_sql = self._qualified_table(table_name)
-
+        
         rows = [
             {f'p{i}': row.get(column) for i, column in enumerate(columns)}
             for row in data.to_dict(orient='records')
         ]
 
-        delete_sql = sqlalchemy.text(
-            f'DELETE FROM {table_sql} WHERE "date" BETWEEN :min_date AND :max_date'
-        )
         insert_sql = sqlalchemy.text(
             f'INSERT INTO {table_sql} ({columns_sql}) VALUES ({placeholders_sql})'
         )
 
         with self.engine.begin() as connection:
-            connection.execute(delete_sql, {'min_date': min_date, 'max_date': max_date})
             connection.execute(insert_sql, rows)
 
         print(f'Записано строк: {len(rows)} в {self.schema}.{table_name}')
