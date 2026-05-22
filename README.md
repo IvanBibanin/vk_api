@@ -6,7 +6,7 @@
 - раскрытие вложенного JSON через `pd.json_normalize`;
 - выгрузка списка кампаний/планов с постраничной пагинацией `limit` / `offset`;
 - сохранение данных в Excel;
-- загрузка DataFrame в PostgreSQL.
+- загрузка DataFrame в PostgreSQL через отдельный пакет `to_postgresql`.
 
 ## Установка
 
@@ -14,6 +14,7 @@
 
 ```python
 !pip install git+https://github.com/IvanBibanin/vk_api.git
+!pip install git+https://github.com/IvanBibanin/to_postgresql.git
 ```
 
 Если пакет уже установлен и нужно подтянуть свежую версию из GitHub:
@@ -21,6 +22,7 @@
 ```python
 !pip uninstall -y ivan-vk-api
 !pip install --no-cache-dir --force-reinstall git+https://github.com/IvanBibanin/vk_api.git@main
+!pip install --no-cache-dir --force-reinstall git+https://github.com/IvanBibanin/to_postgresql.git@main
 ```
 
 После переустановки лучше перезапустить kernel Jupyter.
@@ -233,7 +235,6 @@ from to_postgresql import ToPostgreSQL
 to_pg = ToPostgreSQL(
     port=6543,
     host="your-postgres-host",
-    schema="kg_globaltreid",
     user="your-user",
     password="your-password",
     database="postgres"
@@ -248,7 +249,6 @@ from to_postgresql import to_postgresql
 to_pg = to_postgresql(
     port=6543,
     host="your-postgres-host",
-    schema="kg_globaltreid",
     user="your-user",
     password="your-password",
     database="postgres"
@@ -260,13 +260,13 @@ to_pg = to_postgresql(
 Таблица со статистикой:
 
 ```python
-to_pg.create_table(data=df_campane, table_name="ВК_МИШИДО")
+to_pg.create_table(data=df_campane, table_name="ВК_МИШИДО", schema="kg_globaltreid")
 ```
 
 Таблица со справочником кампаний:
 
 ```python
-to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
+to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM", schema="kg_globaltreid")
 ```
 
 Важно: `create_table()` использует `CREATE TABLE IF NOT EXISTS`. Если таблица уже есть, PostgreSQL не добавит новые колонки автоматически.
@@ -275,14 +275,14 @@ to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
 
 ```python
 to_pg.sql_query('DROP TABLE IF EXISTS "kg_globaltreid"."ВК_МИШИДО_KM"')
-to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
+to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM", schema="kg_globaltreid")
 ```
 
 ## Загрузить данные в PostgreSQL
 
 ```python
-to_pg.insert_into_table(data=df_campane, table_name="ВК_МИШИДО")
-to_pg.insert_into_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
+to_pg.insert_into_table(data=df_campane, table_name="ВК_МИШИДО", schema="kg_globaltreid")
+to_pg.insert_into_table(data=df_campane_name, table_name="ВК_МИШИДО_KM", schema="kg_globaltreid")
 ```
 
 ## Повторная загрузка без дублей
@@ -297,7 +297,7 @@ to_pg.sql_query(
     'WHERE "date" BETWEEN DATE \'2026-05-18\' AND DATE \'2026-05-18\''
 )
 
-to_pg.insert_into_table(data=df_campane, table_name="ВК_МИШИДО")
+to_pg.insert_into_table(data=df_campane, table_name="ВК_МИШИДО", schema="kg_globaltreid")
 ```
 
 В PostgreSQL даты пишутся в одинарных кавычках:
@@ -318,7 +318,7 @@ DATE '2026-05-18'
 
 ```python
 to_pg.sql_query('DELETE FROM "kg_globaltreid"."ВК_МИШИДО_KM"')
-to_pg.insert_into_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
+to_pg.insert_into_table(data=df_campane_name, table_name="ВК_МИШИДО_KM", schema="kg_globaltreid")
 ```
 
 ### Справочник кампаний: удалить только текущие id
@@ -334,7 +334,7 @@ to_pg.sql_query(
     f'WHERE "id" IN ({ids_sql})'
 )
 
-to_pg.insert_into_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
+to_pg.insert_into_table(data=df_campane_name, table_name="ВК_МИШИДО_KM", schema="kg_globaltreid")
 ```
 
 В текущей версии `ToPostgreSQL` все колонки, кроме `date` и `Дата`, создаются как `TEXT`, поэтому значения `id` в SQL нужно сравнивать как строки:
@@ -389,24 +389,23 @@ df_campane_name = vk.get_campaigns_name(limit=100)
 to_pg = ToPostgreSQL(
     port=6543,
     host="your-postgres-host",
-    schema="kg_globaltreid",
     user="your-user",
     password="your-password",
     database="postgres"
 )
 
-to_pg.create_table(data=df_campane, table_name="ВК_МИШИДО")
-to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
+to_pg.create_table(data=df_campane, table_name="ВК_МИШИДО", schema="kg_globaltreid")
+to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM", schema="kg_globaltreid")
 
 to_pg.sql_query(
     f'DELETE FROM "kg_globaltreid"."ВК_МИШИДО" '
     f"WHERE \"date\" BETWEEN DATE '{date_from}' AND DATE '{date_to}'"
 )
 
-to_pg.insert_into_table(data=df_campane, table_name="ВК_МИШИДО")
+to_pg.insert_into_table(data=df_campane, table_name="ВК_МИШИДО", schema="kg_globaltreid")
 
 to_pg.sql_query('DELETE FROM "kg_globaltreid"."ВК_МИШИДО_KM"')
-to_pg.insert_into_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
+to_pg.insert_into_table(data=df_campane_name, table_name="ВК_МИШИДО_KM", schema="kg_globaltreid")
 ```
 
 ## Частые ошибки
@@ -420,6 +419,7 @@ to_pg.insert_into_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
 ```python
 !pip uninstall -y ivan-vk-api
 !pip install --no-cache-dir --force-reinstall git+https://github.com/IvanBibanin/vk_api.git@main
+!pip install --no-cache-dir --force-reinstall git+https://github.com/IvanBibanin/to_postgresql.git@main
 ```
 
 ### `ImportError: cannot import name 'ToPostgreSQL'`
@@ -469,7 +469,7 @@ to_pg.sql_query('DELETE FROM "kg_globaltreid"."ВК_МИШИДО_KM"')
 
 ```python
 to_pg.sql_query('DROP TABLE IF EXISTS "kg_globaltreid"."ВК_МИШИДО_KM"')
-to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
+to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM", schema="kg_globaltreid")
 ```
 
 ## Ограничения текущей версии
@@ -484,7 +484,6 @@ to_pg.create_table(data=df_campane_name, table_name="ВК_МИШИДО_KM")
 
 ```text
 vk_api.py          # класс Vk для VK Ads API
-to_postgresql.py   # класс ToPostgreSQL для PostgreSQL
 setup.py           # установка пакета из GitHub
 README.md          # документация и примеры
 ```
